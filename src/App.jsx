@@ -600,17 +600,61 @@ function Reports({ data }) {
 export default function App() {
   const { data, save, loaded } = useStorage();
   const [tab, setTab] = useState("home");
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   if (!loaded) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "sans-serif" }}>
       <div style={{ textAlign: "center" }}><div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div><div style={{ color: "#888" }}>Yuklanmoqda · 読み込み中...</div></div>
     </div>
   );
+
   const navItems = [
     { id: "home", icon: "home", label: "Bosh sahifa", jp: "ホーム" },
     { id: "sessions", icon: "calendar", label: "Darslar", jp: "授業" },
     { id: "students", icon: "users", label: "Talabalar", jp: "学生" },
     { id: "reports", icon: "bar", label: "Hisobotlar", jp: "報告" },
   ];
+
+  // MOBIL VERSIYA
+  if (isMobile) return (
+    <div style={{ fontFamily: "'Segoe UI', sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Mobil header */}
+      <div style={{ background: "#1E1B4B", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>🌸 Bridge SE</div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>FPT Consulting Japan</div>
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{data.students.length} talaba · {data.sessions.length} dars</div>
+      </div>
+
+      {/* Kontent */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px 80px" }}>
+        {tab === "home" && <Dashboard data={data} />}
+        {tab === "sessions" && <Sessions data={data} save={save} />}
+        {tab === "students" && <Students data={data} save={save} />}
+        {tab === "reports" && <Reports data={data} />}
+      </div>
+
+      {/* Pastki navigatsiya */}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#1E1B4B", display: "flex", borderTop: "1px solid rgba(255,255,255,0.1)", zIndex: 100 }}>
+        {navItems.map(item => (
+          <button key={item.id} onClick={() => setTab(item.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "10px 4px", border: "none", cursor: "pointer", background: "transparent", color: tab === item.id ? "#fff" : "rgba(255,255,255,0.45)", borderTop: tab === item.id ? "2px solid #818CF8" : "2px solid transparent" }}>
+            <Icon name={item.icon} size={20} />
+            <div style={{ fontSize: 10, fontWeight: 600, marginTop: 3 }}>{item.label}</div>
+            <div style={{ fontSize: 9, opacity: 0.6 }}>{item.jp}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  // DESKTOP VERSIYA
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex" }}>
       <div style={{ width: 210, background: "#1E1B4B", flexShrink: 0, display: "flex", flexDirection: "column", padding: "24px 0" }}>
