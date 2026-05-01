@@ -102,15 +102,15 @@ function Dashboard({ data }) {
         <p style={{ margin: "4px 0 0", color: "#666", fontSize: 14 }}>{new Date().toLocaleDateString("uz-UZ", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
-        {statBox("Jami muassasalar", data.institutions.length, "#4F46E5", "home")}
-        {statBox("Jami talabalar", data.students.length, "#0891B2", "users")}
-        {statBox("Jami darslar", data.sessions.length, "#059669", "calendar")}
-        {statBox("Bugungi darslar", todaySessions.length, "#D97706", "star")}
+        {statBox("Jami muassasalar · 合計機関数", data.institutions.length, "#4F46E5", "home")}
+        {statBox("Jami talabalar · 総学生数", data.students.length, "#0891B2", "users")}
+        {statBox("Jami darslar · 合計授業数", data.sessions.length, "#059669", "calendar")}
+        {statBox("Bugungi darslar · 今日の授業", todaySessions.length, "#D97706", "star")}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div style={{ background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: "#111" }}>📅 Kelgusi darslar</h3>
-          {upcomingSessions.length === 0 ? <p style={{ color: "#aaa", fontSize: 13, margin: 0 }}>Darslar yo'q.</p> :
+          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: "#111" }}>📅 Kelgusi darslar · 今後のレッスン</h3>
+          {upcomingSessions.length === 0 ? <p style={{ color: "#aaa", fontSize: 13, margin: 0 }}>Darslar yo'q · レッスンなし</p> :
             upcomingSessions.map(s => {
               const inst = data.institutions.find(i => i.id === s.institutionId);
               return (
@@ -125,7 +125,7 @@ function Dashboard({ data }) {
             })}
         </div>
         <div style={{ background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: "#111" }}>🏫 Muassasalar holati</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: "#111" }}>🏫 Muassasalar holati · 機関ステータス</h3>
           {data.institutions.map(inst => {
             const instStudents = data.students.filter(s => s.institutionId === inst.id);
             const instSessions = data.sessions.filter(s => s.institutionId === inst.id);
@@ -504,10 +504,10 @@ export default function App() {
     </div>
   );
   const navItems = [
-    { id: "home", icon: "home", label: "Bosh sahifa" },
-    { id: "sessions", icon: "calendar", label: "Darslar" },
-    { id: "students", icon: "users", label: "Talabalar" },
-    { id: "reports", icon: "bar", label: "Hisobotlar" },
+    { id: "home", icon: "home", label: "Bosh sahifa", jp: "ホーム" },
+    { id: "sessions", icon: "calendar", label: "Darslar", jp: "授業" },
+    { id: "students", icon: "users", label: "Talabalar", jp: "学生" },
+    { id: "reports", icon: "bar", label: "Hisobotlar", jp: "報告" },
   ];
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex" }}>
@@ -520,7 +520,11 @@ export default function App() {
         <nav style={{ padding: "16px 12px", flex: 1 }}>
           {navItems.map(item => (
             <button key={item.id} onClick={() => setTab(item.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, marginBottom: 4, textAlign: "left", background: tab === item.id ? "rgba(255,255,255,0.15)" : "transparent", color: tab === item.id ? "#fff" : "rgba(255,255,255,0.6)" }}>
-              <Icon name={item.icon} size={17} />{item.label}
+              <Icon name={item.icon} size={17} />
+              <div>
+                <div>{item.label}</div>
+                <div style={{ fontSize: 10, opacity: 0.6, fontWeight: 400 }}>{item.jp}</div>
+              </div>
             </button>
           ))}
         </nav>
