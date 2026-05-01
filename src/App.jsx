@@ -1,5 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+
+// Firebase konfiguratsiya
+const firebaseConfig = {
+  apiKey: "AIzaSyCiA73YtMhhMSoCMErcUKKKgW-EE42GopA",
+  authDomain: "bridge-se.firebaseapp.com",
+  projectId: "bridge-se",
+  storageBucket: "bridge-se.firebasestorage.app",
+  messagingSenderId: "801070213190",
+  appId: "1:801070213190:web:243a386c8e2f3170f70247",
+  measurementId: "G-K2VJEHS1C5"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const DATA_DOC = "bridge-se/main";
 
 const STORAGE_KEY = "bridge_se_data_v1";
 
