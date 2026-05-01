@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import * as XLSX from "xlsx";
 
 const STORAGE_KEY = "bridge_se_data_v1";
 
@@ -32,22 +33,17 @@ const TOPICS = [
 function useStorage() {
   const [data, setData] = useState(null);
   const [loaded, setLoaded] = useState(false);
-
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       setData(saved ? { ...defaultData, ...JSON.parse(saved) } : defaultData);
-    } catch {
-      setData(defaultData);
-    }
+    } catch { setData(defaultData); }
     setLoaded(true);
   }, []);
-
   const save = useCallback((newData) => {
     setData(newData);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newData)); } catch {}
   }, []);
-
   return { data, save, loaded };
 }
 
@@ -62,6 +58,7 @@ const Icon = ({ name, size = 16 }) => {
     star: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
     trash: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>,
     home: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    download: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
   };
   return icons[name] || null;
 };
@@ -91,7 +88,7 @@ function Dashboard({ data }) {
       </div>
       <div>
         <div style={{ fontSize: 28, fontWeight: 800, color: "#111", lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>{label}</div>
+        <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{label}</div>
       </div>
     </div>
   );
@@ -137,8 +134,8 @@ function Dashboard({ data }) {
                   <div style={{ fontSize: 12, color: "#888" }}>{inst.location}</div>
                 </div>
                 <div style={{ textAlign: "right", fontSize: 12, color: "#666" }}>
-                  <div>{instStudents.length} talaba</div>
-                  <div>{instSessions.length} dars</div>
+                  <div>{instStudents.length} talaba · 学生</div>
+                  <div>{instSessions.length} dars · 授業</div>
                 </div>
               </div>
             );
@@ -153,7 +150,7 @@ function SessionDetail({ session, data, save, onClose }) {
   const inst = data.institutions.find(i => i.id === session.institutionId);
   const students = data.students.filter(s => s.institutionId === session.institutionId);
   const att = data.attendance[session.id] || {};
-  const fb = data.feedback[session.id] || { text: "", rating: 0, summary: "", aiLoading: false };
+  const fb = data.feedback[session.id] || { text: "", rating: 0, summary: "", mood: "", nextPlan: "" };
 
   function toggleAttendance(sid) {
     save({ ...data, attendance: { ...data.attendance, [session.id]: { ...att, [sid]: !att[sid] } } });
@@ -161,78 +158,91 @@ function SessionDetail({ session, data, save, onClose }) {
   function saveFeedback(updates) {
     save({ ...data, feedback: { ...data.feedback, [session.id]: { ...fb, ...updates } } });
   }
-  async function generateAISummary() {
-    saveFeedback({ aiLoading: true });
-    const presentStudents = students.filter(s => att[s.id]).map(s => s.name);
-    const absentStudents = students.filter(s => !att[s.id]).map(s => s.name);
-    const prompt = `Sen Bridge SE — O'zbekiston-Yaponiya IT ko'prigi dasturining yordamchisisisan.
-Muassasa: ${inst?.name}
-Mavzu: ${session.topic}
-Sana: ${session.date}, Soat: ${session.time}
-Kelganlar (${presentStudents.length}): ${presentStudents.join(", ") || "yo'q"}
-Kelmadi (${absentStudents.length}): ${absentStudents.join(", ") || "yo'q"}
-Reyting: ${fb.rating}/5
-O'qituvchi izohi: ${fb.text || "kiritilmagan"}
 
-Hisobotni quyidagi formatda yoz:
-1. 📋 DARS XULOSA (2-3 gap)
-2. 📊 DAVOMAT TAHLIL (foiz va baho)
-3. 🎯 TAVSIYALAR (2-3 ta)
-4. 🇯🇵 YAPONIYA UCHUN HISOBOT (professional uslubda)`;
-    try {
-      const res = await fetch("/.netlify/functions/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
-      });
-      const d = await res.json();
-      const text = d.content?.map(c => c.text || "").join("") || "Xato yuz berdi.";
-      saveFeedback({ summary: text, aiLoading: false });
-    } catch {
-      saveFeedback({ summary: "❌ Xato. Qayta urining.", aiLoading: false });
-    }
-  }
+  const presentCount = Object.values(att).filter(Boolean).length;
+  const pct = students.length ? Math.round(presentCount / students.length * 100) : 0;
 
   return (
     <div style={{ background: "#fff", borderRadius: 16, padding: 20, boxShadow: "0 4px 20px rgba(0,0,0,0.08)", overflowY: "auto", maxHeight: "calc(100vh - 160px)" }}>
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: inst?.color || "#333" }}>{inst?.name}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: inst?.color || "#333", textTransform: "uppercase", letterSpacing: 1 }}>{inst?.name}</div>
           <div style={{ fontSize: 16, fontWeight: 800, color: "#111", marginTop: 2 }}>{session.topic}</div>
-          <div style={{ fontSize: 13, color: "#888" }}>{session.date} · {session.time}</div>
+          <div style={{ fontSize: 13, color: "#888" }}>{session.date} · soat {session.time}</div>
         </div>
         <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#999" }}><Icon name="x" size={20} /></button>
       </div>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#333", marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
-          <span>👥 Davomat</span>
-          {students.length > 0 && <span style={{ fontSize: 13, color: "#4F46E5" }}>{Object.values(att).filter(Boolean).length}/{students.length}</span>}
+
+      {/* Davomat */}
+      <div style={{ background: "#F9FAFB", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#333", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>👥 Davomat · 出席</span>
+          <span style={{ fontSize: 13, background: pct >= 80 ? "#ECFDF5" : pct >= 60 ? "#FEF9C3" : "#FEE2E2", color: pct >= 80 ? "#059669" : pct >= 60 ? "#D97706" : "#DC2626", padding: "3px 10px", borderRadius: 20, fontWeight: 700 }}>
+            {presentCount}/{students.length} · {pct}%
+          </span>
         </div>
-        {students.length === 0 ? <p style={{ fontSize: 13, color: "#aaa" }}>Bu muassasada talabalar yo'q.</p> :
+        {students.length === 0 ? <p style={{ fontSize: 13, color: "#aaa", margin: 0 }}>Bu muassasada talabalar yo'q · 学生がいません</p> :
           students.map(student => (
-            <div key={student.id} onClick={() => toggleAttendance(student.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: att[student.id] ? "#ECFDF5" : "#F9FAFB", border: "1.5px solid " + (att[student.id] ? "#059669" : "#E5E7EB"), cursor: "pointer", marginBottom: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: att[student.id] ? "#059669" : "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
-                {att[student.id] ? <Icon name="check" size={14} /> : <Icon name="x" size={14} />}
+            <div key={student.id} onClick={() => toggleAttendance(student.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, background: att[student.id] ? "#ECFDF5" : "#fff", border: "1.5px solid " + (att[student.id] ? "#059669" : "#E5E7EB"), cursor: "pointer", marginBottom: 8, transition: "all 0.15s" }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", background: att[student.id] ? "#059669" : "#E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
+                {att[student.id] ? <Icon name="check" size={13} /> : <Icon name="x" size={13} />}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>{student.name}</div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>{student.name}</span>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: att[student.id] ? "#059669" : "#aaa" }}>{att[student.id] ? "Keldi · 出席" : "Kelmadi · 欠席"}</span>
             </div>
           ))}
       </div>
-      <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#333", marginBottom: 10 }}>💬 Feedback</div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          {[1,2,3,4,5].map(n => (
-            <button key={n} onClick={() => saveFeedback({ rating: n })} style={{ width: 36, height: 36, borderRadius: 8, border: "none", cursor: "pointer", background: n <= fb.rating ? "#F59E0B" : "#F3F4F6", fontSize: 18 }}>★</button>
-          ))}
+
+      {/* Feedback Forma */}
+      <div style={{ background: "#F0F0FF", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "#4F46E5", marginBottom: 14 }}>📝 Dars Hisoboti · 授業レポート</div>
+
+        {/* Reyting */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 8 }}>Dars sifati · 授業品質</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[1,2,3,4,5].map(n => (
+              <button key={n} onClick={() => saveFeedback({ rating: n })} style={{ width: 40, height: 40, borderRadius: 10, border: "none", cursor: "pointer", background: n <= fb.rating ? "#F59E0B" : "#E5E7EB", fontSize: 20, transition: "all 0.15s", transform: n <= fb.rating ? "scale(1.1)" : "scale(1)" }}>★</button>
+            ))}
+            {fb.rating > 0 && <span style={{ alignSelf: "center", fontSize: 13, color: "#888", marginLeft: 4 }}>{["","Yomon","O'rtacha","Yaxshi","A'lo","Mukammal"][fb.rating]}</span>}
+          </div>
         </div>
-        <textarea value={fb.text} onChange={e => saveFeedback({ text: e.target.value })} placeholder="Dars haqida izoh..." style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", height: 80, fontFamily: "inherit", boxSizing: "border-box" }} />
-        <div style={{ marginTop: 12, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#333" }}>🤖 AI Hisobot</span>
-          <button onClick={generateAISummary} disabled={fb.aiLoading} style={{ background: fb.aiLoading ? "#a5b4fc" : "#4F46E5", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", cursor: fb.aiLoading ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>
-            {fb.aiLoading ? "⏳ Yozilmoqda..." : "✨ AI Xulosa Yarat"}
-          </button>
+
+        {/* Kayfiyat */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 8 }}>Talabalar kayfiyati · 学生の雰囲気</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[["😴","Uyquli"],["😐","Neytral"],["🙂","Yaxshi"],["😊","Faol"],["🔥","Juda faol"]].map(([emoji, label]) => (
+              <button key={label} onClick={() => saveFeedback({ mood: label })} style={{ padding: "6px 12px", borderRadius: 20, border: "2px solid " + (fb.mood === label ? "#4F46E5" : "#E5E7EB"), cursor: "pointer", background: fb.mood === label ? "#EEF2FF" : "#fff", fontSize: 13, fontWeight: 600, color: fb.mood === label ? "#4F46E5" : "#666" }}>
+                {emoji} {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <textarea value={fb.summary} onChange={e => saveFeedback({ summary: e.target.value })} placeholder="AI xulosa bu yerda paydo bo'ladi..." style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", height: 180, fontFamily: "inherit", boxSizing: "border-box" }} />
+
+        {/* Izoh */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 6 }}>Dars izohi · 授業コメント</label>
+          <textarea value={fb.text} onChange={e => saveFeedback({ text: e.target.value })} placeholder="Dars qanday o'tdi? Qiyinchiliklar, yutuqlar..." style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #C7D2FE", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", height: 80, fontFamily: "inherit", boxSizing: "border-box", background: "#fff" }} />
+        </div>
+
+        {/* Keyingi reja */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 6 }}>Keyingi dars rejasi · 次回授業計画</label>
+          <textarea value={fb.nextPlan} onChange={e => saveFeedback({ nextPlan: e.target.value })} placeholder="Keyingi darsda nima qilinadi?" style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #C7D2FE", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", height: 60, fontFamily: "inherit", boxSizing: "border-box", background: "#fff" }} />
+        </div>
+
+        {/* Yaponiya hisoboti */}
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 6 }}>🇯🇵 Yapon tomon uchun xulosa · 日本側へのサマリー</label>
+          <textarea value={fb.summary} onChange={e => saveFeedback({ summary: e.target.value })} placeholder="Yapon mijozga yuboriladigan professional hisobot..." style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #C7D2FE", borderRadius: 8, fontSize: 13, outline: "none", resize: "vertical", height: 80, fontFamily: "inherit", boxSizing: "border-box", background: "#fff" }} />
+        </div>
+
+        {/* Saqlandi belgisi */}
+        {(fb.text || fb.summary || fb.rating > 0) && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "#059669", fontWeight: 600 }}>✓ Feedback avtomatik saqlandi · 自動保存済み</div>
+        )}
       </div>
     </div>
   );
@@ -244,6 +254,7 @@ function Sessions({ data, save }) {
   const [filter, setFilter] = useState("all");
   const [form, setForm] = useState({ institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" });
   const sorted = [...data.sessions].filter(s => filter === "all" || s.institutionId === filter).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+
   function addSession() {
     if (!form.institutionId || !form.date || !form.topic) return;
     save({ ...data, sessions: [...data.sessions, { ...form, id: Date.now().toString() }] });
@@ -251,25 +262,27 @@ function Sessions({ data, save }) {
     setForm({ institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" });
   }
   function deleteSession(id) {
-    if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
+    if (!window.confirm("O'chirishni tasdiqlaysizmi? · 削除しますか？")) return;
     const newAtt = { ...data.attendance }; delete newAtt[id];
     const newFb = { ...data.feedback }; delete newFb[id];
     save({ ...data, sessions: data.sessions.filter(s => s.id !== id), attendance: newAtt, feedback: newFb });
     if (selected?.id === id) setSelected(null);
   }
+
   const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
   const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: selected ? "1fr 380px" : "1fr", gap: 20 }}>
+    <div style={{ display: "grid", gridTemplateColumns: selected ? "1fr 420px" : "1fr", gap: 20 }}>
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>📅 Dars jadvali</h2>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>📅 Dars jadvali · 授業スケジュール</h2>
           <button onClick={() => setShowAdd(true)} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="plus" size={16} /> Yangi dars
+            <Icon name="plus" size={16} /> Yangi dars · 新授業
           </button>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-          <button onClick={() => setFilter("all")} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filter === "all" ? "#4F46E5" : "#f3f4f6", color: filter === "all" ? "#fff" : "#555" }}>Hammasi</button>
+          <button onClick={() => setFilter("all")} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filter === "all" ? "#4F46E5" : "#f3f4f6", color: filter === "all" ? "#fff" : "#555" }}>Hammasi · 全て</button>
           {data.institutions.map(inst => (
             <button key={inst.id} onClick={() => setFilter(inst.id)} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filter === inst.id ? inst.color : "#f3f4f6", color: filter === inst.id ? "#fff" : "#555" }}>{inst.name.split(" ")[0]}</button>
           ))}
@@ -278,14 +291,15 @@ function Sessions({ data, save }) {
           {sorted.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: "#aaa" }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-              <div>Hali dars yo'q. Birinchi darsni qo'shing!</div>
+              <div>Hali dars yo'q · まだ授業がありません</div>
             </div>
           ) : sorted.map(session => {
             const inst = data.institutions.find(i => i.id === session.institutionId);
             const instStudents = data.students.filter(s => s.institutionId === session.institutionId);
             const att = data.attendance[session.id] || {};
             const presentCount = Object.values(att).filter(Boolean).length;
-            const hasFeedback = !!data.feedback[session.id]?.text;
+            const fb = data.feedback[session.id];
+            const hasFeedback = fb?.text || fb?.rating > 0 || fb?.summary;
             const isSelected = selected?.id === session.id;
             return (
               <div key={session.id} onClick={() => setSelected(isSelected ? null : session)} style={{ background: isSelected ? "#F0F0FF" : "#fff", border: isSelected ? "2px solid #4F46E5" : "2px solid transparent", borderRadius: 12, padding: 16, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
@@ -298,12 +312,12 @@ function Sessions({ data, save }) {
                         <div style={{ fontSize: 13, color: "#888", marginTop: 3 }}>{inst?.name} · {session.date} soat {session.time}</div>
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        {hasFeedback && <span style={{ fontSize: 11, background: "#05996920", color: "#059669", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>Feedback ✓</span>}
+                        {hasFeedback && <span style={{ fontSize: 11, background: "#05996920", color: "#059669", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>📝 Hisobot</span>}
                         {instStudents.length > 0 && <span style={{ fontSize: 11, background: "#F0F0FF", color: "#4F46E5", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>{presentCount}/{instStudents.length}</span>}
                         <button onClick={e => { e.stopPropagation(); deleteSession(session.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#DC2626", padding: 4, opacity: 0.6 }}><Icon name="trash" size={15} /></button>
                       </div>
                     </div>
-                    {session.notes && <div style={{ fontSize: 12, color: "#999", marginTop: 6, fontStyle: "italic" }}>{session.notes}</div>}
+                    {fb?.rating > 0 && <div style={{ fontSize: 12, color: "#F59E0B", marginTop: 4 }}>{"★".repeat(fb.rating)}{"☆".repeat(5 - fb.rating)}</div>}
                   </div>
                 </div>
               </div>
@@ -313,29 +327,29 @@ function Sessions({ data, save }) {
       </div>
       {selected && <SessionDetail session={selected} data={data} save={save} onClose={() => setSelected(null)} />}
       {showAdd && (
-        <Modal title="Yangi dars qo'shish" onClose={() => setShowAdd(false)}>
+        <Modal title="Yangi dars qo'shish · 新授業追加" onClose={() => setShowAdd(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
-              <label style={lbl}>Muassasa *</label>
+              <label style={lbl}>Muassasa · 機関 *</label>
               <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
-                <option value="">Tanlang...</option>
+                <option value="">Tanlang · 選択...</option>
                 {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div><label style={lbl}>Sana *</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} /></div>
-              <div><label style={lbl}>Soat</label><input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} style={inp} /></div>
+              <div><label style={lbl}>Sana · 日付 *</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} /></div>
+              <div><label style={lbl}>Soat · 時間</label><input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} style={inp} /></div>
             </div>
             <div>
-              <label style={lbl}>Mavzu *</label>
+              <label style={lbl}>Mavzu · テーマ *</label>
               <select value={TOPICS.includes(form.topic) ? form.topic : ""} onChange={e => setForm({ ...form, topic: e.target.value })} style={inp}>
-                <option value="">Tanlang...</option>
+                <option value="">Tanlang · 選択...</option>
                 {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <input type="text" placeholder="Boshqa mavzu..." value={TOPICS.includes(form.topic) ? "" : form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} style={{ ...inp, marginTop: 8 }} />
+              <input type="text" placeholder="Boshqa mavzu · その他のテーマ..." value={TOPICS.includes(form.topic) ? "" : form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} style={{ ...inp, marginTop: 8 }} />
             </div>
-            <div><label style={lbl}>Izoh</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 80, resize: "vertical" }} /></div>
-            <button onClick={addSession} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Dars qo'shish</button>
+            <div><label style={lbl}>Izoh · メモ</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 80, resize: "vertical" }} /></div>
+            <button onClick={addSession} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Dars qo'shish · 追加</button>
           </div>
         </Modal>
       )}
@@ -354,7 +368,7 @@ function Students({ data, save }) {
     setForm({ institutionId: "", name: "", email: "", notes: "" });
   }
   function deleteStudent(id) {
-    if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
+    if (!window.confirm("O'chirishni tasdiqlaysizmi? · 削除しますか？")) return;
     save({ ...data, students: data.students.filter(s => s.id !== id) });
   }
   const filtered = data.students.filter(s => filterInst === "all" || s.institutionId === filterInst);
@@ -363,13 +377,13 @@ function Students({ data, save }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>👥 Talabalar</h2>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>👥 Talabalar · 学生</h2>
         <button onClick={() => setShowAdd(true)} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-          <Icon name="plus" size={16} /> Talaba qo'shish
+          <Icon name="plus" size={16} /> Talaba qo'shish · 学生追加
         </button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button onClick={() => setFilterInst("all")} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filterInst === "all" ? "#4F46E5" : "#f3f4f6", color: filterInst === "all" ? "#fff" : "#555" }}>Hammasi ({data.students.length})</button>
+        <button onClick={() => setFilterInst("all")} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filterInst === "all" ? "#4F46E5" : "#f3f4f6", color: filterInst === "all" ? "#fff" : "#555" }}>Hammasi · 全て ({data.students.length})</button>
         {data.institutions.map(inst => (
           <button key={inst.id} onClick={() => setFilterInst(inst.id)} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filterInst === inst.id ? inst.color : "#f3f4f6", color: filterInst === inst.id ? "#fff" : "#555" }}>
             {inst.name.split(" ")[0]} ({data.students.filter(s => s.institutionId === inst.id).length})
@@ -380,12 +394,13 @@ function Students({ data, save }) {
         {filtered.length === 0 ? (
           <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 60, color: "#aaa" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
-            <div>Talabalar yo'q. Qo'shing!</div>
+            <div>Talabalar yo'q · 学生がいません</div>
           </div>
         ) : filtered.map(student => {
           const inst = data.institutions.find(i => i.id === student.institutionId);
           const studentSessions = data.sessions.filter(s => s.institutionId === student.institutionId);
           const attended = studentSessions.filter(s => data.attendance[s.id]?.[student.id]).length;
+          const pct = studentSessions.length ? Math.round(attended / studentSessions.length * 100) : 0;
           return (
             <div key={student.id} style={{ background: "#fff", borderRadius: 14, padding: 18, boxShadow: "0 2px 10px rgba(0,0,0,0.06)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
@@ -400,27 +415,27 @@ function Students({ data, save }) {
                 </div>
                 <button onClick={() => deleteStudent(student.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#DC2626", opacity: 0.5 }}><Icon name="trash" size={15} /></button>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, background: (inst?.color || "#ccc") + "15", color: inst?.color || "#555", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>{inst?.name}</span>
-                <span style={{ fontSize: 12, background: "#F0F0FF", color: "#4F46E5", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>{attended}/{studentSessions.length} dars</span>
+                <span style={{ fontSize: 12, background: "#F0F0FF", color: "#4F46E5", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>{attended}/{studentSessions.length} · {pct}%</span>
               </div>
             </div>
           );
         })}
       </div>
       {showAdd && (
-        <Modal title="Yangi talaba qo'shish" onClose={() => setShowAdd(false)}>
+        <Modal title="Yangi talaba · 新学生" onClose={() => setShowAdd(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div><label style={lbl}>Muassasa *</label>
+            <div><label style={lbl}>Muassasa · 機関 *</label>
               <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
-                <option value="">Tanlang...</option>
+                <option value="">Tanlang · 選択...</option>
                 {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
             </div>
-            <div><label style={lbl}>Ism sharifi *</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Abdullayev Bobur" /></div>
+            <div><label style={lbl}>Ism sharifi · 氏名 *</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Abdullayev Bobur" /></div>
             <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={inp} /></div>
-            <div><label style={lbl}>Izoh</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} /></div>
-            <button onClick={addStudent} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Talaba qo'shish</button>
+            <div><label style={lbl}>Izoh · メモ</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} /></div>
+            <button onClick={addStudent} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Talaba qo'shish · 追加</button>
           </div>
         </Modal>
       )}
@@ -433,19 +448,62 @@ function Reports({ data }) {
   const inst = data.institutions.find(i => i.id === selected);
   const students = data.students.filter(s => s.institutionId === selected);
   const sessions = data.sessions.filter(s => s.institutionId === selected).sort((a, b) => a.date.localeCompare(b.date));
-  function exportReport() {
-    const lines = ["HISOBOT: " + inst?.name + " - " + new Date().toLocaleDateString("uz-UZ"), "=".repeat(60), "Jami talabalar: " + students.length, "Jami darslar: " + sessions.length, "", "TALABALAR DAVOMATI:",
-      ...students.map(st => { const att = sessions.filter(s => data.attendance[s.id]?.[st.id]).length; return "  " + st.name + ": " + att + "/" + sessions.length + " (" + (sessions.length ? Math.round(att/sessions.length*100) : 0) + "%)"; })];
-    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "hisobot.txt"; a.click();
-    URL.revokeObjectURL(url);
+
+  function exportExcel() {
+    const wb = XLSX.utils.book_new();
+
+    // 1-varaq: Davomat jadvali
+    const attHeaders = ["Talaba ismi · 学生氏名", "Email", ...sessions.map(s => s.date + " " + s.topic.slice(0, 20)), "Jami · 合計", "Foiz · 割合"];
+    const attRows = students.map(st => {
+      const attended = sessions.filter(s => data.attendance[s.id]?.[st.id]).length;
+      const pct = sessions.length ? Math.round(attended / sessions.length * 100) + "%" : "0%";
+      return [st.name, st.email || "", ...sessions.map(s => data.attendance[s.id]?.[st.id] ? "✓" : "✗"), attended + "/" + sessions.length, pct];
+    });
+    const ws1 = XLSX.utils.aoa_to_sheet([attHeaders, ...attRows]);
+    ws1["!cols"] = [{ wch: 25 }, { wch: 25 }, ...sessions.map(() => ({ wch: 18 })), { wch: 10 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Davomat · 出席");
+
+    // 2-varaq: Dars hisobotlari
+    const fbHeaders = ["Sana · 日付", "Soat · 時間", "Mavzu · テーマ", "Davomat · 出席", "Reyting · 評価", "Kayfiyat · 雰囲気", "Dars izohi · コメント", "Keyingi reja · 次回計画", "Yaponiya hisoboti · 日本側サマリー"];
+    const fbRows = sessions.map(s => {
+      const att = data.attendance[s.id] || {};
+      const present = Object.values(att).filter(Boolean).length;
+      const fb = data.feedback[s.id] || {};
+      return [s.date, s.time, s.topic, present + "/" + students.length, fb.rating ? "★".repeat(fb.rating) : "-", fb.mood || "-", fb.text || "-", fb.nextPlan || "-", fb.summary || "-"];
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet([fbHeaders, ...fbRows]);
+    ws2["!cols"] = [{ wch: 12 }, { wch: 8 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 40 }, { wch: 30 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Hisobotlar · レポート");
+
+    // 3-varaq: Umumiy statistika
+    const totalSessions = sessions.length;
+    const avgAtt = students.length && totalSessions ? Math.round(sessions.reduce((acc, s) => {
+      const att = data.attendance[s.id] || {};
+      return acc + Object.values(att).filter(Boolean).length;
+    }, 0) / totalSessions * 100 / students.length) : 0;
+    const statsData = [
+      ["Ko'rsatkich · 指標", "Qiymat · 値"],
+      ["Muassasa · 機関", inst?.name],
+      ["Jami talabalar · 総学生数", students.length],
+      ["Jami darslar · 総授業数", totalSessions],
+      ["O'rtacha davomat · 平均出席率", avgAtt + "%"],
+      ["Hisobot yozilgan darslar · レポート済み授業", sessions.filter(s => data.feedback[s.id]?.text).length],
+      ["Hisobot sanasi · レポート日", new Date().toLocaleDateString("uz-UZ")],
+    ];
+    const ws3 = XLSX.utils.aoa_to_sheet(statsData);
+    ws3["!cols"] = [{ wch: 35 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "Statistika · 統計");
+
+    XLSX.writeFile(wb, `bridge-se-${inst?.name}-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>📊 Hisobotlar</h2>
-        <button onClick={exportReport} style={{ background: "#059669", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>📥 TXT</button>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>📊 Hisobotlar · レポート</h2>
+        <button onClick={exportExcel} style={{ background: "#059669", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+          <Icon name="download" size={16} /> Excel · ダウンロード
+        </button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {data.institutions.map(i => (
@@ -454,21 +512,65 @@ function Reports({ data }) {
       </div>
       {inst && (
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
-            {[["Talabalar", students.length, inst.color], ["Darslar", sessions.length, "#4F46E5"], ["AI Hisobot", sessions.filter(s => data.feedback[s.id]?.summary).length, "#059669"]].map(([label, value, color]) => (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
+            {[
+              ["Talabalar · 学生", students.length, inst.color],
+              ["Darslar · 授業", sessions.length, "#4F46E5"],
+              ["Hisobot · レポート", sessions.filter(s => data.feedback[s.id]?.text).length, "#059669"],
+              ["O'rt. reyting · 平均評価", sessions.filter(s => data.feedback[s.id]?.rating > 0).length ? (sessions.reduce((a, s) => a + (data.feedback[s.id]?.rating || 0), 0) / sessions.filter(s => data.feedback[s.id]?.rating > 0).length).toFixed(1) + "★" : "-", "#F59E0B"]
+            ].map(([label, value, color]) => (
               <div key={label} style={{ background: "#fff", borderRadius: 12, padding: 18, textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-                <div style={{ fontSize: 32, fontWeight: 800, color }}>{value}</div>
-                <div style={{ fontSize: 13, color: "#888" }}>{label}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color }}>{value}</div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{label}</div>
               </div>
             ))}
           </div>
+
+          {sessions.length > 0 && (
+            <div style={{ background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.06)", marginBottom: 20, overflowX: "auto" }}>
+              <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>📋 Dars hisobotlari · 授業レポート一覧</h3>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#F9FAFB" }}>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700 }}>Sana · 日付</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700 }}>Mavzu · テーマ</th>
+                    <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700 }}>Davomat · 出席</th>
+                    <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 700 }}>Reyting · 評価</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700 }}>Kayfiyat · 雰囲気</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 700 }}>Izoh · コメント</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((s, idx) => {
+                    const att = data.attendance[s.id] || {};
+                    const present = Object.values(att).filter(Boolean).length;
+                    const pct = students.length ? Math.round(present / students.length * 100) : 0;
+                    const fb = data.feedback[s.id] || {};
+                    return (
+                      <tr key={s.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 600 }}>{s.date}</td>
+                        <td style={{ padding: "10px 12px", maxWidth: 200 }}>{s.topic}</td>
+                        <td style={{ textAlign: "center", padding: "10px 12px" }}>
+                          <span style={{ fontWeight: 700, color: pct >= 80 ? "#059669" : pct >= 60 ? "#D97706" : "#DC2626" }}>{present}/{students.length} · {pct}%</span>
+                        </td>
+                        <td style={{ textAlign: "center", padding: "10px 12px", color: "#F59E0B" }}>{fb.rating ? "★".repeat(fb.rating) : <span style={{ color: "#ccc" }}>—</span>}</td>
+                        <td style={{ padding: "10px 12px" }}>{fb.mood || <span style={{ color: "#ccc" }}>—</span>}</td>
+                        <td style={{ padding: "10px 12px", color: "#666", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fb.text || <span style={{ color: "#ccc" }}>—</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {students.length > 0 && sessions.length > 0 && (
             <div style={{ background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.06)", overflowX: "auto" }}>
-              <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Davomat jadvali</h3>
+              <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>👥 Davomat jadvali · 出席表</h3>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left", padding: "8px 12px", background: "#F9FAFB", fontWeight: 700 }}>Talaba</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px", background: "#F9FAFB", fontWeight: 700 }}>Talaba · 学生</th>
                     {sessions.map(s => <th key={s.id} style={{ padding: "8px 10px", background: "#F9FAFB", fontWeight: 600, fontSize: 11, textAlign: "center" }}>{s.date.slice(5)}</th>)}
                     <th style={{ padding: "8px 10px", background: "#F9FAFB", fontWeight: 700, textAlign: "center" }}>%</th>
                   </tr>
@@ -476,7 +578,7 @@ function Reports({ data }) {
                 <tbody>
                   {students.map((st, idx) => {
                     const attended = sessions.filter(s => data.attendance[s.id]?.[st.id]).length;
-                    const pct = sessions.length ? Math.round(attended/sessions.length*100) : 0;
+                    const pct = sessions.length ? Math.round(attended / sessions.length * 100) : 0;
                     return (
                       <tr key={st.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA" }}>
                         <td style={{ padding: "10px 12px", fontWeight: 600 }}>{st.name}</td>
@@ -500,7 +602,7 @@ export default function App() {
   const [tab, setTab] = useState("home");
   if (!loaded) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "sans-serif" }}>
-      <div style={{ textAlign: "center" }}><div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div><div style={{ color: "#888" }}>Yuklanmoqda...</div></div>
+      <div style={{ textAlign: "center" }}><div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div><div style={{ color: "#888" }}>Yuklanmoqda · 読み込み中...</div></div>
     </div>
   );
   const navItems = [
@@ -511,7 +613,7 @@ export default function App() {
   ];
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex" }}>
-      <div style={{ width: 200, background: "#1E1B4B", flexShrink: 0, display: "flex", flexDirection: "column", padding: "24px 0" }}>
+      <div style={{ width: 210, background: "#1E1B4B", flexShrink: 0, display: "flex", flexDirection: "column", padding: "24px 0" }}>
         <div style={{ padding: "0 20px 24px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>🌸 Bridge SE</div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>FPT Consulting Japan</div>
@@ -519,11 +621,11 @@ export default function App() {
         </div>
         <nav style={{ padding: "16px 12px", flex: 1 }}>
           {navItems.map(item => (
-            <button key={item.id} onClick={() => setTab(item.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, marginBottom: 4, textAlign: "left", background: tab === item.id ? "rgba(255,255,255,0.15)" : "transparent", color: tab === item.id ? "#fff" : "rgba(255,255,255,0.6)" }}>
+            <button key={item.id} onClick={() => setTab(item.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: "none", cursor: "pointer", marginBottom: 4, textAlign: "left", background: tab === item.id ? "rgba(255,255,255,0.15)" : "transparent", color: tab === item.id ? "#fff" : "rgba(255,255,255,0.6)" }}>
               <Icon name={item.icon} size={17} />
               <div>
-                <div>{item.label}</div>
-                <div style={{ fontSize: 10, opacity: 0.6, fontWeight: 400 }}>{item.jp}</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{item.label}</div>
+                <div style={{ fontSize: 10, opacity: 0.6 }}>{item.jp}</div>
               </div>
             </button>
           ))}
