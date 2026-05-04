@@ -693,7 +693,225 @@ function Students({ data, save }) {
   );
 }
 
-function Reports({ data }) {
+function Files({ data, save }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [filterInst, setFilterInst] = useState("all");
+  const [filterType, setFilterType] = useState("all");
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState({ name: "", url: "", type: "pdf", institutionId: "", description: "" });
+
+  const files = data.files || [];
+
+  const FILE_TYPES = [
+    { id: "pdf", label: "PDF", icon: "📄", color: "#DC2626" },
+    { id: "ppt", label: "PPT/PPTX", icon: "📊", color: "#D97706" },
+    { id: "word", label: "Word", icon: "📝", color: "#2563EB" },
+    { id: "txt", label: "TXT", icon: "📃", color: "#059669" },
+    { id: "other", label: "Boshqa", icon: "📁", color: "#6B7280" },
+  ];
+
+  function getFileInfo(type) {
+    return FILE_TYPES.find(t => t.id === type) || FILE_TYPES[FILE_TYPES.length - 1];
+  }
+
+  // Google Drive havolasini to'g'ridan-to'g'ri ochish uchun o'zgartirish
+  function fixGoogleDriveUrl(url) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match) return `https://drive.google.com/file/d/${match[1]}/view`;
+    return url;
+  }
+
+  function addFile() {
+    if (!form.name || !form.url || !form.institutionId) return;
+    const newFile = {
+      ...form,
+      url: fixGoogleDriveUrl(form.url),
+      id: Date.now().toString(),
+      addedAt: new Date().toISOString().split("T")[0],
+    };
+    save({ ...data, files: [...files, newFile] });
+    setShowAdd(false);
+    setForm({ name: "", url: "", type: "pdf", institutionId: "", description: "" });
+  }
+
+  function deleteFile(id) {
+    if (!window.confirm("Faylni o'chirishni tasdiqlaysizmi?")) return;
+    save({ ...data, files: files.filter(f => f.id !== id) });
+  }
+
+  const filtered = files.filter(f => {
+    const instOk = filterInst === "all" || f.institutionId === filterInst;
+    const typeOk = filterType === "all" || f.type === filterType;
+    const searchOk = !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.description?.toLowerCase().includes(search.toLowerCase());
+    return instOk && typeOk && searchOk;
+  });
+
+  const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>📚 O'quv Materiallari · 教材ファイル</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#888" }}>Google Drive, OneDrive, Dropbox havolalari</p>
+        </div>
+        <button onClick={() => setShowAdd(true)} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+          <Icon name="plus" size={16} /> Fayl qo'shish · 追加
+        </button>
+      </div>
+
+      {/* Qo'llanma */}
+      <div style={{ background: "linear-gradient(135deg, #EEF2FF, #F0FDF4)", borderRadius: 14, padding: 16, marginBottom: 20, border: "1px solid #C7D2FE" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5", marginBottom: 8 }}>💡 Qanday ishlatiladi? · 使い方</div>
+        <div style={{ fontSize: 12, color: "#555", lineHeight: 1.8 }}>
+          1. Faylni <strong>Google Drive</strong> ga yuklang → O'ng bosing → "Ulashish" → Havolani nusxalang<br/>
+          2. Yoki <strong>OneDrive / Dropbox</strong> havolasini ham qo'shsa bo'ladi<br/>
+          3. Bu yerga nom, havola va muassasani kiriting → Saqlang ✅
+        </div>
+      </div>
+
+      {/* Search va filter */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="🔍 Qidirish · 検索..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ ...inp, width: 200, padding: "8px 12px" }}
+        />
+        <button onClick={() => setFilterInst("all")} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filterInst === "all" ? "#4F46E5" : "#f3f4f6", color: filterInst === "all" ? "#fff" : "#555" }}>Hammasi</button>
+        {data.institutions.map(inst => (
+          <button key={inst.id} onClick={() => setFilterInst(inst.id)} style={{ padding: "6px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: filterInst === inst.id ? inst.color : "#f3f4f6", color: filterInst === inst.id ? "#fff" : "#555" }}>
+            {inst.name.split(" ")[0]}
+          </button>
+        ))}
+        <div style={{ borderLeft: "1px solid #e5e7eb", height: 24 }} />
+        {FILE_TYPES.map(t => (
+          <button key={t.id} onClick={() => setFilterType(filterType === t.id ? "all" : t.id)} style={{ padding: "6px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: filterType === t.id ? t.color : "#f3f4f6", color: filterType === t.id ? "#fff" : "#555" }}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Statistika */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        {FILE_TYPES.map(t => {
+          const count = files.filter(f => f.type === t.id).length;
+          if (!count) return null;
+          return (
+            <div key={t.id} style={{ background: "#fff", borderRadius: 10, padding: "8px 14px", boxShadow: "0 1px 6px rgba(0,0,0,0.05)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 16 }}>{t.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.color }}>{count}</span>
+              <span style={{ fontSize: 12, color: "#888" }}>{t.label}</span>
+            </div>
+          );
+        })}
+        <div style={{ background: "#fff", borderRadius: 10, padding: "8px 14px", boxShadow: "0 1px 6px rgba(0,0,0,0.05)" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#4F46E5" }}>{files.length}</span>
+          <span style={{ fontSize: 12, color: "#888", marginLeft: 4 }}>Jami fayl</span>
+        </div>
+      </div>
+
+      {/* Fayllar ro'yxati */}
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: "#aaa", background: "#fff", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.05)" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Fayllar yo'q · ファイルがありません</div>
+          <div style={{ fontSize: 13, marginTop: 6 }}>Yuqoridagi "Fayl qo'shish" tugmasini bosing</div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+          {filtered.map(file => {
+            const inst = data.institutions.find(i => i.id === file.institutionId);
+            const typeInfo = getFileInfo(file.type);
+            return (
+              <div key={file.id} style={{ background: "#fff", borderRadius: 14, padding: 18, boxShadow: "0 2px 10px rgba(0,0,0,0.06)", border: `1.5px solid ${typeInfo.color}18`, display: "flex", gap: 14, alignItems: "flex-start" }}>
+                <div style={{ width: 52, height: 52, borderRadius: 13, background: typeInfo.color + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>
+                  {typeInfo.icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#111", marginBottom: 4, lineHeight: 1.3 }}>{file.name}</div>
+                  {file.description && <div style={{ fontSize: 12, color: "#666", marginBottom: 6, fontStyle: "italic" }}>{file.description}</div>}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                    <span style={{ fontSize: 11, background: (inst?.color || "#ccc") + "18", color: inst?.color || "#888", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>{inst?.name}</span>
+                    <span style={{ fontSize: 11, background: typeInfo.color + "15", color: typeInfo.color, padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>{typeInfo.icon} {typeInfo.label}</span>
+                    <span style={{ fontSize: 11, color: "#aaa", padding: "3px 0" }}>📅 {file.addedAt}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <a href={file.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, background: "#EEF2FF", color: "#4F46E5", padding: "6px 14px", borderRadius: 8, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                      🔗 Ochish · 開く
+                    </a>
+                    <button onClick={() => deleteFile(file.id)} style={{ fontSize: 12, background: "#FEE2E2", color: "#DC2626", padding: "6px 10px", borderRadius: 8, fontWeight: 700, border: "none", cursor: "pointer" }}>
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Fayl qo'shish modal */}
+      {showAdd && (
+        <Modal title="📎 Fayl qo'shish · ファイル追加" onClose={() => setShowAdd(false)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <label style={lbl}>Fayl nomi · ファイル名 *</label>
+              <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Mas: Yapon ish madaniyati - 1-dars.pdf" />
+            </div>
+            <div>
+              <label style={lbl}>Havola · リンク * (Google Drive, OneDrive, Dropbox)</label>
+              <input type="url" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} style={inp} placeholder="https://drive.google.com/..." />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={lbl}>Fayl turi · ファイル種別 *</label>
+                <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} style={inp}>
+                  {FILE_TYPES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={lbl}>Muassasa · 機関 *</label>
+                <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
+                  <option value="">Tanlang...</option>
+                  {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={lbl}>Tavsif · 説明 (ixtiyoriy)</label>
+              <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} placeholder="Bu fayl haqida qisqacha ma'lumot..." />
+            </div>
+
+            {/* Google Drive qo'llanmasi */}
+            <div style={{ background: "#F0FDF4", borderRadius: 10, padding: 12, border: "1px solid #BBF7D0" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#059669", marginBottom: 6 }}>📖 Google Drive havolasini qanday olish:</div>
+              <div style={{ fontSize: 11, color: "#065F46", lineHeight: 1.8 }}>
+                1. Drive da faylga o'ng bosing<br/>
+                2. "Ulashish" → "Havola olish" ni bosing<br/>
+                3. "Havola orqali kirish huquqi bor" ni tanlang<br/>
+                4. Havolani nusxalab bu yerga joylashtiring
+              </div>
+            </div>
+
+            <button
+              onClick={addFile}
+              disabled={!form.name || !form.url || !form.institutionId}
+              style={{ background: form.name && form.url && form.institutionId ? "#4F46E5" : "#C7D2FE", color: "#fff", border: "none", borderRadius: 10, padding: "13px 20px", cursor: form.name && form.url && form.institutionId ? "pointer" : "not-allowed", fontSize: 14, fontWeight: 700 }}
+            >
+              ✅ Saqlash · 保存
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+
   const [selected, setSelected] = useState(data.institutions[0]?.id || "");
   const inst = data.institutions.find(i => i.id === selected);
   const students = data.students.filter(s => s.institutionId === selected);
@@ -868,6 +1086,7 @@ export default function App() {
     { id: "home", icon: "home", label: "Bosh sahifa", jp: "ホーム" },
     { id: "sessions", icon: "calendar", label: "Darslar", jp: "授業" },
     { id: "students", icon: "users", label: "Talabalar", jp: "学生" },
+    { id: "files", icon: "star", label: "Materiallar", jp: "教材" },
     { id: "reports", icon: "bar", label: "Hisobotlar", jp: "報告" },
   ];
 
@@ -888,6 +1107,7 @@ export default function App() {
         {tab === "home" && <Dashboard data={data} setTab={setTab} />}
         {tab === "sessions" && <Sessions data={data} save={save} />}
         {tab === "students" && <Students data={data} save={save} />}
+        {tab === "files" && <Files data={data} save={save} />}
         {tab === "reports" && <Reports data={data} />}
       </div>
 
