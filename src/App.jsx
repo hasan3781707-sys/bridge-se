@@ -24,9 +24,11 @@ const defaultData = {
   institutions: [
     { id: "amity", name: "Amity University", location: "Toshkent", color: "#4F46E5" },
     { id: "school21", name: "School21", location: "Toshkent", color: "#0891B2" },
+    { id: "school21smr", name: "School21 Samarkand", location: "Samarkand", color: "#7C3AED" },
     { id: "najot", name: "Najot Ta'lim", location: "Toshkent", color: "#059669" },
     { id: "tatu", name: "TATU", location: "Toshkent", color: "#D97706" },
     { id: "bukhara", name: "Buxoro Texnika Universiteti", location: "Buxoro", color: "#DC2626" },
+    { id: "bukharamill", name: "Buxoro Milliy Universiteti · ブハラ国立大学", location: "Buxoro", color: "#DB2777" },
   ],
   students: [],
   sessions: [],
@@ -50,17 +52,32 @@ const TOPICS = [
 function useStorage() {
   const [data, setData] = useState(null);
   const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      setData(saved ? { ...defaultData, ...JSON.parse(saved) } : defaultData);
-    } catch { setData(defaultData); }
-    setLoaded(true);
+    const [col, docId] = DATA_DOC.split("/");
+    const ref = doc(db, col, docId);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setData({ ...defaultData, ...snap.data() });
+      } else {
+        setData(defaultData);
+      }
+      setLoaded(true);
+    }, () => {
+      setData(defaultData);
+      setLoaded(true);
+    });
+    return () => unsub();
   }, []);
-  const save = useCallback((newData) => {
+
+  const save = useCallback(async (newData) => {
     setData(newData);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newData)); } catch {}
+    try {
+      const [col, docId] = DATA_DOC.split("/");
+      await setDoc(doc(db, col, docId), newData);
+    } catch (e) { console.error(e); }
   }, []);
+
   return { data, save, loaded };
 }
 
@@ -94,32 +111,194 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function Dashboard({ data }) {
+function DetailModal({ type, data, onClose }) {
+  const today = new Date().toISOString().split("T")[0];
+
+  const content = () => {
+    if (type === "institutions") {
+      return (
+        <div>
+          <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>Barcha muassasalar · 全機関一覧</p>
+          {data.institutions.map(inst => {
+            const students = data.students.filter(s => s.institutionId === inst.id);
+            const sessions = data.sessions.filter(s => s.institutionId === inst.id);
+            const feedbacks = sessions.filter(s => data.feedback[s.id]?.text).length;
+            return (
+              <div key={inst.id} style={{ background: "#F9FAFB", borderRadius: 12, padding: 16, marginBottom: 12, borderLeft: `4px solid ${inst.color}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#111" }}>{inst.name}</div>
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>📍 {inst.location}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <span style={{ fontSize: 12, background: inst.color + "18", color: inst.color, padding: "4px 10px", borderRadius: 20, fontWeight: 700 }}>{students.length} talaba</span>
+                    <span style={{ fontSize: 12, background: "#EEF2FF", color: "#4F46E5", padding: "4px 10px", borderRadius: 20, fontWeight: 700 }}>{sessions.length} dars</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
+                  <div style={{ fontSize: 12, color: "#666" }}>📝 Hisobot: <strong>{feedbacks}</strong></div>
+                  <div style={{ fontSize: 12, color: "#666" }}>📅 So'nggi dars: <strong>{sessions.sort((a,b) => b.date.localeCompare(a.date))[0]?.date || "—"}</strong></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (type === "students") {
+      return (
+        <div>
+          <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>Barcha talabalar · 全学生一覧</p>
+          {data.institutions.map(inst => {
+            const students = data.students.filter(s => s.institutionId === inst.id);
+            if (!students.length) return null;
+            return (
+              <div key={inst.id} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: inst.color, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: inst.color }} />
+                  {inst.name} · {students.length} talaba
+                </div>
+                {students.map(st => {
+                  const sessions = data.sessions.filter(s => s.institutionId === inst.id);
+                  const attended = sessions.filter(s => data.attendance[s.id]?.[st.id]).length;
+                  const pct = sessions.length ? Math.round(attended / sessions.length * 100) : 0;
+                  return (
+                    <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#F9FAFB", borderRadius: 10, marginBottom: 6 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: inst.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: inst.color, fontSize: 15 }}>
+                        {st.name[0]?.toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>{st.name}</div>
+                        {st.email && <div style={{ fontSize: 12, color: "#888" }}>{st.email}</div>}
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: pct >= 80 ? "#059669" : pct >= 60 ? "#D97706" : "#DC2626" }}>{pct}%</div>
+                        <div style={{ fontSize: 11, color: "#aaa" }}>{attended}/{sessions.length} dars</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {data.students.length === 0 && <p style={{ color: "#aaa", textAlign: "center", padding: 20 }}>Hali talabalar yo'q</p>}
+        </div>
+      );
+    }
+
+    if (type === "sessions") {
+      const allSessions = [...data.sessions].sort((a, b) => b.date.localeCompare(a.date));
+      return (
+        <div>
+          <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>Barcha darslar · 全授業一覧</p>
+          {allSessions.length === 0 && <p style={{ color: "#aaa", textAlign: "center", padding: 20 }}>Hali darslar yo'q</p>}
+          {allSessions.map(s => {
+            const inst = data.institutions.find(i => i.id === s.institutionId);
+            const students = data.students.filter(st => st.institutionId === s.institutionId);
+            const att = data.attendance[s.id] || {};
+            const present = Object.values(att).filter(Boolean).length;
+            const pct = students.length ? Math.round(present / students.length * 100) : 0;
+            const fb = data.feedback[s.id] || {};
+            return (
+              <div key={s.id} style={{ background: "#F9FAFB", borderRadius: 12, padding: 14, marginBottom: 10, borderLeft: `4px solid ${inst?.color || "#ccc"}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#111" }}>{s.topic}</div>
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{inst?.name} · {s.date} {s.time}</div>
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: pct >= 80 ? "#059669" : pct >= 60 ? "#D97706" : "#DC2626", background: pct >= 80 ? "#ECFDF5" : pct >= 60 ? "#FEF9C3" : "#FEE2E2", padding: "3px 10px", borderRadius: 20 }}>
+                    {present}/{students.length} · {pct}%
+                  </span>
+                </div>
+                {fb.rating > 0 && <div style={{ fontSize: 12, color: "#F59E0B", marginTop: 6 }}>{"★".repeat(fb.rating)}{"☆".repeat(5 - fb.rating)} {fb.mood && `· ${fb.mood}`}</div>}
+                {fb.text && <div style={{ fontSize: 12, color: "#666", marginTop: 4, fontStyle: "italic" }}>"{fb.text}"</div>}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (type === "today") {
+      const todaySessions = data.sessions.filter(s => s.date === today);
+      return (
+        <div>
+          <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>Bugungi darslar · 今日の授業 — {new Date().toLocaleDateString("uz-UZ")}</p>
+          {todaySessions.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40, color: "#aaa" }}>
+              <div style={{ fontSize: 40 }}>📭</div>
+              <div style={{ marginTop: 8 }}>Bugun dars yo'q · 今日は授業がありません</div>
+            </div>
+          )}
+          {todaySessions.map(s => {
+            const inst = data.institutions.find(i => i.id === s.institutionId);
+            const students = data.students.filter(st => st.institutionId === s.institutionId);
+            const att = data.attendance[s.id] || {};
+            const present = Object.values(att).filter(Boolean).length;
+            return (
+              <div key={s.id} style={{ background: "#F9FAFB", borderRadius: 14, padding: 18, marginBottom: 12, borderLeft: `4px solid ${inst?.color || "#ccc"}` }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#111", marginBottom: 4 }}>{s.topic}</div>
+                <div style={{ fontSize: 13, color: "#888", marginBottom: 10 }}>{inst?.name} · Soat {s.time}</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <span style={{ fontSize: 12, background: "#EEF2FF", color: "#4F46E5", padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>👥 {students.length} talaba</span>
+                  <span style={{ fontSize: 12, background: "#ECFDF5", color: "#059669", padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>✅ {present} keldi</span>
+                  <span style={{ fontSize: 12, background: "#FEE2E2", color: "#DC2626", padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>❌ {students.length - present} kelmadi</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+  };
+
+  const titles = {
+    institutions: "🏫 Muassasalar · 機関一覧",
+    students: "👥 Talabalar · 学生一覧",
+    sessions: "📅 Darslar · 授業一覧",
+    today: "⭐ Bugungi darslar · 今日の授業"
+  };
+
+  return (
+    <Modal title={titles[type]} onClose={onClose}>
+      {content()}
+    </Modal>
+  );
+}
+
+function Dashboard({ data, setTab }) {
+  const [detailType, setDetailType] = useState(null);
   const today = new Date().toISOString().split("T")[0];
   const todaySessions = data.sessions.filter(s => s.date === today);
   const upcomingSessions = data.sessions.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
-  const statBox = (label, value, color, icon) => (
-    <div style={{ background: "#fff", borderRadius: 14, padding: "20px 24px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", display: "flex", alignItems: "center", gap: 16 }}>
+
+  const statBox = (label, value, color, icon, type) => (
+    <div onClick={() => setDetailType(type)} style={{ background: "#fff", borderRadius: 14, padding: "20px 24px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", display: "flex", alignItems: "center", gap: 16, cursor: "pointer", transition: "all 0.2s", border: "2px solid transparent" }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.transform = "translateY(0)"; }}>
       <div style={{ width: 48, height: 48, borderRadius: 12, background: color + "18", display: "flex", alignItems: "center", justifyContent: "center", color }}>
         <Icon name={icon} size={22} />
       </div>
-      <div>
+      <div style={{ flex: 1 }}>
         <div style={{ fontSize: 28, fontWeight: 800, color: "#111", lineHeight: 1 }}>{value}</div>
         <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{label}</div>
       </div>
+      <div style={{ fontSize: 18, color: "#ccc" }}>›</div>
     </div>
   );
   return (
     <div>
+      {detailType && <DetailModal type={detailType} data={data} onClose={() => setDetailType(null)} />}
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#111" }}>Xush kelibsiz 👋</h2>
         <p style={{ margin: "4px 0 0", color: "#666", fontSize: 14 }}>{new Date().toLocaleDateString("uz-UZ", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
-        {statBox("Jami muassasalar · 合計機関数", data.institutions.length, "#4F46E5", "home")}
-        {statBox("Jami talabalar · 総学生数", data.students.length, "#0891B2", "users")}
-        {statBox("Jami darslar · 合計授業数", data.sessions.length, "#059669", "calendar")}
-        {statBox("Bugungi darslar · 今日の授業", todaySessions.length, "#D97706", "star")}
+        {statBox("Jami muassasalar · 合計機関数", data.institutions.length, "#4F46E5", "home", "institutions")}
+        {statBox("Jami talabalar · 総学生数", data.students.length, "#0891B2", "users", "students")}
+        {statBox("Jami darslar · 合計授業数", data.sessions.length, "#059669", "calendar", "sessions")}
+        {statBox("Bugungi darslar · 今日の授業", todaySessions.length, "#D97706", "star", "today")}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div style={{ background: "#fff", borderRadius: 14, padding: 20, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
@@ -267,19 +446,35 @@ function SessionDetail({ session, data, save, onClose }) {
 
 function Sessions({ data, save }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [editSession, setEditSession] = useState(null);
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [form, setForm] = useState({ institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" });
+  const emptyForm = { institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
   const sorted = [...data.sessions].filter(s => filter === "all" || s.institutionId === filter).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
 
   function addSession() {
     if (!form.institutionId || !form.date || !form.topic) return;
     save({ ...data, sessions: [...data.sessions, { ...form, id: Date.now().toString() }] });
     setShowAdd(false);
-    setForm({ institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" });
+    setForm(emptyForm);
   }
+
+  function updateSession() {
+    if (!form.institutionId || !form.date || !form.topic) return;
+    save({ ...data, sessions: data.sessions.map(s => s.id === editSession.id ? { ...s, ...form } : s) });
+    setEditSession(null);
+    setForm(emptyForm);
+  }
+
+  function openEdit(session, e) {
+    e.stopPropagation();
+    setEditSession(session);
+    setForm({ institutionId: session.institutionId, date: session.date, time: session.time, topic: session.topic, notes: session.notes || "" });
+  }
+
   function deleteSession(id) {
-    if (!window.confirm("O'chirishni tasdiqlaysizmi? · 削除しますか？")) return;
+    if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
     const newAtt = { ...data.attendance }; delete newAtt[id];
     const newFb = { ...data.feedback }; delete newFb[id];
     save({ ...data, sessions: data.sessions.filter(s => s.id !== id), attendance: newAtt, feedback: newFb });
@@ -288,6 +483,32 @@ function Sessions({ data, save }) {
 
   const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
   const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
+
+  const SessionForm = ({ onSubmit, btnText }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div>
+        <label style={lbl}>Muassasa · 機関 *</label>
+        <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
+          <option value="">Tanlang · 選択...</option>
+          {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><label style={lbl}>Sana · 日付 *</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} /></div>
+        <div><label style={lbl}>Soat · 時間</label><input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} style={inp} /></div>
+      </div>
+      <div>
+        <label style={lbl}>Mavzu · テーマ *</label>
+        <select value={TOPICS.includes(form.topic) ? form.topic : ""} onChange={e => setForm({ ...form, topic: e.target.value })} style={inp}>
+          <option value="">Tanlang · 選択...</option>
+          {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input type="text" placeholder="Boshqa mavzu · その他..." value={TOPICS.includes(form.topic) ? "" : form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} style={{ ...inp, marginTop: 8 }} />
+      </div>
+      <div><label style={lbl}>Izoh · メモ</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 80, resize: "vertical" }} /></div>
+      <button onClick={onSubmit} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>{btnText}</button>
+    </div>
+  );
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: selected ? "1fr 420px" : "1fr", gap: 20 }}>
@@ -331,6 +552,7 @@ function Sessions({ data, save }) {
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         {hasFeedback && <span style={{ fontSize: 11, background: "#05996920", color: "#059669", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>📝 Hisobot</span>}
                         {instStudents.length > 0 && <span style={{ fontSize: 11, background: "#F0F0FF", color: "#4F46E5", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>{presentCount}/{instStudents.length}</span>}
+                        <button onClick={e => openEdit(session, e)} style={{ background: "none", border: "none", cursor: "pointer", color: "#4F46E5", padding: 4, opacity: 0.7, fontSize: 14 }}>✏️</button>
                         <button onClick={e => { e.stopPropagation(); deleteSession(session.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#DC2626", padding: 4, opacity: 0.6 }}><Icon name="trash" size={15} /></button>
                       </div>
                     </div>
@@ -345,29 +567,12 @@ function Sessions({ data, save }) {
       {selected && <SessionDetail session={selected} data={data} save={save} onClose={() => setSelected(null)} />}
       {showAdd && (
         <Modal title="Yangi dars qo'shish · 新授業追加" onClose={() => setShowAdd(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div>
-              <label style={lbl}>Muassasa · 機関 *</label>
-              <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
-                <option value="">Tanlang · 選択...</option>
-                {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </select>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div><label style={lbl}>Sana · 日付 *</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} /></div>
-              <div><label style={lbl}>Soat · 時間</label><input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} style={inp} /></div>
-            </div>
-            <div>
-              <label style={lbl}>Mavzu · テーマ *</label>
-              <select value={TOPICS.includes(form.topic) ? form.topic : ""} onChange={e => setForm({ ...form, topic: e.target.value })} style={inp}>
-                <option value="">Tanlang · 選択...</option>
-                {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <input type="text" placeholder="Boshqa mavzu · その他のテーマ..." value={TOPICS.includes(form.topic) ? "" : form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} style={{ ...inp, marginTop: 8 }} />
-            </div>
-            <div><label style={lbl}>Izoh · メモ</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 80, resize: "vertical" }} /></div>
-            <button onClick={addSession} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Dars qo'shish · 追加</button>
-          </div>
+          <SessionForm onSubmit={addSession} btnText="Dars qo'shish · 追加" />
+        </Modal>
+      )}
+      {editSession && (
+        <Modal title="Darsni tahrirlash · 授業編集" onClose={() => { setEditSession(null); setForm({ institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" }); }}>
+          <SessionForm onSubmit={updateSession} btnText="Saqlash · 保存" />
         </Modal>
       )}
     </div>
@@ -376,21 +581,54 @@ function Sessions({ data, save }) {
 
 function Students({ data, save }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [editStudent, setEditStudent] = useState(null);
   const [filterInst, setFilterInst] = useState("all");
-  const [form, setForm] = useState({ institutionId: "", name: "", email: "", notes: "" });
+  const emptyForm = { institutionId: "", name: "", email: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
+
   function addStudent() {
     if (!form.institutionId || !form.name) return;
     save({ ...data, students: [...data.students, { ...form, id: Date.now().toString() }] });
     setShowAdd(false);
-    setForm({ institutionId: "", name: "", email: "", notes: "" });
+    setForm(emptyForm);
   }
+
+  function updateStudent() {
+    if (!form.institutionId || !form.name) return;
+    save({ ...data, students: data.students.map(s => s.id === editStudent.id ? { ...s, ...form } : s) });
+    setEditStudent(null);
+    setForm(emptyForm);
+  }
+
+  function openEdit(student, e) {
+    e.stopPropagation();
+    setEditStudent(student);
+    setForm({ institutionId: student.institutionId, name: student.name, email: student.email || "", notes: student.notes || "" });
+  }
+
   function deleteStudent(id) {
-    if (!window.confirm("O'chirishni tasdiqlaysizmi? · 削除しますか？")) return;
+    if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
     save({ ...data, students: data.students.filter(s => s.id !== id) });
   }
+
   const filtered = data.students.filter(s => filterInst === "all" || s.institutionId === filterInst);
   const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
   const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
+
+  const StudentForm = ({ onSubmit, btnText }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div><label style={lbl}>Muassasa · 機関 *</label>
+        <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
+          <option value="">Tanlang · 選択...</option>
+          {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+      </div>
+      <div><label style={lbl}>Ism sharifi · 氏名 *</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Abdullayev Bobur" /></div>
+      <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={inp} /></div>
+      <div><label style={lbl}>Izoh · メモ</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} /></div>
+      <button onClick={onSubmit} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>{btnText}</button>
+    </div>
+  );
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -431,6 +669,7 @@ function Students({ data, save }) {
                   </div>
                 </div>
                 <button onClick={() => deleteStudent(student.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#DC2626", opacity: 0.5 }}><Icon name="trash" size={15} /></button>
+                <button onClick={e => openEdit(student, e)} style={{ background: "none", border: "none", cursor: "pointer", color: "#4F46E5", opacity: 0.7, fontSize: 14 }}>✏️</button>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, background: (inst?.color || "#ccc") + "15", color: inst?.color || "#555", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>{inst?.name}</span>
@@ -442,18 +681,12 @@ function Students({ data, save }) {
       </div>
       {showAdd && (
         <Modal title="Yangi talaba · 新学生" onClose={() => setShowAdd(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div><label style={lbl}>Muassasa · 機関 *</label>
-              <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
-                <option value="">Tanlang · 選択...</option>
-                {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </select>
-            </div>
-            <div><label style={lbl}>Ism sharifi · 氏名 *</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Abdullayev Bobur" /></div>
-            <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={inp} /></div>
-            <div><label style={lbl}>Izoh · メモ</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} /></div>
-            <button onClick={addStudent} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Talaba qo'shish · 追加</button>
-          </div>
+          <StudentForm onSubmit={addStudent} btnText="Talaba qo'shish · 追加" />
+        </Modal>
+      )}
+      {editStudent && (
+        <Modal title="Talabani tahrirlash · 学生編集" onClose={() => { setEditStudent(null); setForm(emptyForm); }}>
+          <StudentForm onSubmit={updateStudent} btnText="Saqlash · 保存" />
         </Modal>
       )}
     </div>
@@ -652,7 +885,7 @@ export default function App() {
 
       {/* Kontent */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px 80px" }}>
-        {tab === "home" && <Dashboard data={data} />}
+        {tab === "home" && <Dashboard data={data} setTab={setTab} />}
         {tab === "sessions" && <Sessions data={data} save={save} />}
         {tab === "students" && <Students data={data} save={save} />}
         {tab === "reports" && <Reports data={data} />}
