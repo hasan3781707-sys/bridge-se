@@ -380,43 +380,17 @@ function SessionDetail({ session, data, save, onClose }) {
   );
 }
 
-// ===== SESSIONS =====
-function Sessions({ data, save }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editSession, setEditSession] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [filter, setFilter] = useState("all");
-  const emptyForm = { institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" };
-  const [form, setForm] = useState(emptyForm);
-  const sorted = [...data.sessions].filter(s => filter === "all" || s.institutionId === filter).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+// ===== SESSION FORM (tashqarida — fokus muammosi yo'q) =====
+function SessionForm({ form, setForm, institutions, onSubmit, btnText }) {
   const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
   const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
-
-  function addSession() {
-    if (!form.institutionId || !form.date || !form.topic) return;
-    save({ ...data, sessions: [...data.sessions, { ...form, id: Date.now().toString() }] });
-    setShowAdd(false); setForm(emptyForm);
-  }
-  function updateSession() {
-    if (!form.institutionId || !form.date || !form.topic) return;
-    save({ ...data, sessions: data.sessions.map(s => s.id === editSession.id ? { ...s, ...form } : s) });
-    setEditSession(null); setForm(emptyForm);
-  }
-  function deleteSession(id) {
-    if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
-    const newAtt = { ...data.attendance }; delete newAtt[id];
-    const newFb = { ...data.feedback }; delete newFb[id];
-    save({ ...data, sessions: data.sessions.filter(s => s.id !== id), attendance: newAtt, feedback: newFb });
-    if (selected?.id === id) setSelected(null);
-  }
-
-  const SessionForm = ({ onSubmit, btnText }) => (
+  return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
         <label style={lbl}>Muassasa *</label>
         <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
           <option value="">Tanlang...</option>
-          {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+          {institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
         </select>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -435,6 +409,61 @@ function Sessions({ data, save }) {
       <button onClick={onSubmit} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>{btnText}</button>
     </div>
   );
+}
+
+// ===== STUDENT FORM (tashqarida — fokus muammosi yo'q) =====
+function StudentForm({ form, setForm, institutions, onSubmit, btnText }) {
+  const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div><label style={lbl}>Muassasa *</label>
+        <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
+          <option value="">Tanlang...</option>
+          {institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+      </div>
+      <div><label style={lbl}>Ism sharifi *</label>
+        <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Abdullayev Bobur" />
+      </div>
+      <div><label style={lbl}>Email</label>
+        <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={inp} />
+      </div>
+      <div><label style={lbl}>Izoh</label>
+        <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} />
+      </div>
+      <button onClick={onSubmit} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>{btnText}</button>
+    </div>
+  );
+}
+
+// ===== SESSIONS =====
+function Sessions({ data, save }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editSession, setEditSession] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const emptyForm = { institutionId: "", date: new Date().toISOString().split("T")[0], time: "10:00", topic: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
+  const sorted = [...data.sessions].filter(s => filter === "all" || s.institutionId === filter).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+
+  function addSession() {
+    if (!form.institutionId || !form.date || !form.topic) return;
+    save({ ...data, sessions: [...data.sessions, { ...form, id: Date.now().toString() }] });
+    setShowAdd(false); setForm(emptyForm);
+  }
+  function updateSession() {
+    if (!form.institutionId || !form.date || !form.topic) return;
+    save({ ...data, sessions: data.sessions.map(s => s.id === editSession.id ? { ...s, ...form } : s) });
+    setEditSession(null); setForm(emptyForm);
+  }
+  function deleteSession(id) {
+    if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
+    const newAtt = { ...data.attendance }; delete newAtt[id];
+    const newFb = { ...data.feedback }; delete newFb[id];
+    save({ ...data, sessions: data.sessions.filter(s => s.id !== id), attendance: newAtt, feedback: newFb });
+    if (selected?.id === id) setSelected(null);
+  }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: selected ? "1fr 420px" : "1fr", gap: 20 }}>
@@ -491,8 +520,8 @@ function Sessions({ data, save }) {
         </div>
       </div>
       {selected && <SessionDetail session={selected} data={data} save={save} onClose={() => setSelected(null)} />}
-      {showAdd && <Modal title="Yangi dars · 新授業" onClose={() => { setShowAdd(false); setForm(emptyForm); }}><SessionForm onSubmit={addSession} btnText="Qo'shish" /></Modal>}
-      {editSession && <Modal title="Darsni tahrirlash · 編集" onClose={() => { setEditSession(null); setForm(emptyForm); }}><SessionForm onSubmit={updateSession} btnText="Saqlash" /></Modal>}
+      {showAdd && <Modal title="Yangi dars · 新授業" onClose={() => { setShowAdd(false); setForm(emptyForm); }}><SessionForm form={form} setForm={setForm} institutions={data.institutions} onSubmit={addSession} btnText="Qo'shish" /></Modal>}
+      {editSession && <Modal title="Darsni tahrirlash · 編集" onClose={() => { setEditSession(null); setForm(emptyForm); }}><SessionForm form={form} setForm={setForm} institutions={data.institutions} onSubmit={updateSession} btnText="Saqlash" /></Modal>}
     </div>
   );
 }
@@ -505,8 +534,6 @@ function Students({ data, save }) {
   const emptyForm = { institutionId: "", name: "", email: "", notes: "" };
   const [form, setForm] = useState(emptyForm);
   const filtered = data.students.filter(s => filterInst === "all" || s.institutionId === filterInst);
-  const inp = { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
-  const lbl = { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6 };
 
   function addStudent() {
     if (!form.institutionId || !form.name) return;
@@ -522,21 +549,6 @@ function Students({ data, save }) {
     if (!window.confirm("O'chirishni tasdiqlaysizmi?")) return;
     save({ ...data, students: data.students.filter(s => s.id !== id) });
   }
-
-  const StudentForm = ({ onSubmit, btnText }) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div><label style={lbl}>Muassasa *</label>
-        <select value={form.institutionId} onChange={e => setForm({ ...form, institutionId: e.target.value })} style={inp}>
-          <option value="">Tanlang...</option>
-          {data.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-        </select>
-      </div>
-      <div><label style={lbl}>Ism sharifi *</label><input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inp} placeholder="Abdullayev Bobur" /></div>
-      <div><label style={lbl}>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={inp} /></div>
-      <div><label style={lbl}>Izoh</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, height: 70, resize: "vertical" }} /></div>
-      <button onClick={onSubmit} style={{ background: "#4F46E5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>{btnText}</button>
-    </div>
-  );
 
   return (
     <div>
@@ -590,8 +602,8 @@ function Students({ data, save }) {
           );
         })}
       </div>
-      {showAdd && <Modal title="Yangi talaba · 新学生" onClose={() => { setShowAdd(false); setForm(emptyForm); }}><StudentForm onSubmit={addStudent} btnText="Qo'shish" /></Modal>}
-      {editStudent && <Modal title="Talabani tahrirlash · 編集" onClose={() => { setEditStudent(null); setForm(emptyForm); }}><StudentForm onSubmit={updateStudent} btnText="Saqlash" /></Modal>}
+      {showAdd && <Modal title="Yangi talaba · 新学生" onClose={() => { setShowAdd(false); setForm(emptyForm); }}><StudentForm form={form} setForm={setForm} institutions={data.institutions} onSubmit={addStudent} btnText="Qo'shish" /></Modal>}
+      {editStudent && <Modal title="Talabani tahrirlash · 編集" onClose={() => { setEditStudent(null); setForm(emptyForm); }}><StudentForm form={form} setForm={setForm} institutions={data.institutions} onSubmit={updateStudent} btnText="Saqlash" /></Modal>}
     </div>
   );
 }
